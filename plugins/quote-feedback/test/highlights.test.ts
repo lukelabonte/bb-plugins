@@ -14,7 +14,7 @@ afterEach(() => {
   feedbackHighlights.deactivateThread("thread-1");
   document.body.replaceChildren();
   document.head
-    .querySelectorAll("[data-inline-feedback-highlights]")
+    .querySelectorAll("[data-quote-feedback-highlights]")
     .forEach((node) => node.remove());
 });
 
@@ -123,7 +123,6 @@ it("restores the active draft when BB remounts the content script", () => {
           messageId: "message-1",
           sourceSeqEnd: 1,
           quote,
-          kind: "comment",
           body: "Retain this.",
           createdAt: new Date(0).toISOString(),
         },
@@ -133,12 +132,17 @@ it("restores the active draft when BB remounts the content script", () => {
     feedbackHighlights.setDraft(draft);
 
     const highlight = registry.get(
-      "inline-feedback-comment-9",
+      "quote-feedback-quote-9",
     ) as unknown as FakeHighlight;
     expect(highlight.ranges).toHaveLength(1);
     expect((highlight.ranges[0] as Range).toString().replace(/\s/gu, "")).toBe(
       quote.replace(/\s/gu, ""),
     );
+    // Single resting style: the red strike-through registry is gone.
+    expect([...registry.keys()]).toEqual(["quote-feedback-quote-9"]);
+    expect(
+      document.querySelector("[data-quote-feedback-highlights]")?.textContent,
+    ).not.toContain("line-through");
     expect(document.querySelector("[data-markdown-preview]")?.innerHTML).toBe(
       before,
     );
@@ -146,7 +150,7 @@ it("restores the active draft when BB remounts the content script", () => {
     cleanupFirstMount();
     cleanupActiveMount = feedbackHighlights.mount(10);
     const restored = registry.get(
-      "inline-feedback-comment-10",
+      "quote-feedback-quote-10",
     ) as unknown as FakeHighlight;
     expect(restored.ranges).toHaveLength(1);
     expect((restored.ranges[0] as Range).toString().replace(/\s/gu, "")).toBe(
@@ -167,6 +171,6 @@ it("restores the active draft when BB remounts the content script", () => {
     });
   }
   expect(
-    document.querySelector("[data-inline-feedback-highlights]"),
+    document.querySelector("[data-quote-feedback-highlights]"),
   ).toBeNull();
 });

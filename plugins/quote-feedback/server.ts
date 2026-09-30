@@ -2,6 +2,30 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { draftSchema, rpcContract, type FeedbackDraft } from "./contract";
 import { formatRevisionRequest } from "./lib/format-revision-request";
 
+/**
+ * Legacy drafts stored each item with a `kind` ("comment" | "remove"). Every
+ * quote is a comment now: the field is dropped, a removal's reason text
+ * (already stored in `body`) becomes the comment, and body-less removals —
+ * which cannot satisfy the comment schema — are dropped.
+ */
+function migrateLegacyDraft(stored: unknown): unknown {
+  if (!stored || typeof stored !== "object") return stored;
+  const items = (stored as { items?: unknown }).items;
+  if (!Array.isArray(items)) return stored;
+  return {
+    ...stored,
+    items: items
+      .filter(
+        (item): item is Record<string, unknown> =>
+          !!item &&
+          typeof item === "object" &&
+          typeof (item as { body?: unknown }).body === "string" &&
+          !!(item as { body: string }).body.trim(),
+      )
+      .map(({ kind: _kind, ...rest }) => rest),
+  };
+}
+
 export default function plugin(bb: BbPluginApi) {
   const locks = new Map<string, Promise<unknown>>();
   const key = (threadId: string) => `draft:${threadId}`;
@@ -13,8 +37,11 @@ export default function plugin(bb: BbPluginApi) {
   });
 
   const read = async (threadId: string) => {
+    const stored = await bb.storage.kv.get(key(threadId));
     const draft = draftSchema.parse(
-      (await bb.storage.kv.get(key(threadId))) ?? empty(threadId),
+      stored === null || stored === undefined
+        ? empty(threadId)
+        : migrateLegacyDraft(stored),
     );
     if (draft.threadId !== threadId)
       throw new Error("Stored draft thread mismatch");
@@ -82,17 +109,6 @@ export default function plugin(bb: BbPluginApi) {
       mutate(threadId, (draft) => {
         draft.items.splice(indexOf(draft, itemId), 1);
       }),
-    moveItem: ({ threadId, itemId, direction }) =>
-      mutate(threadId, (draft) => {
-        const from = indexOf(draft, itemId);
-        const to = from + (direction === "up" ? -1 : 1);
-        if (to >= 0 && to < draft.items.length) {
-          [draft.items[from], draft.items[to]] = [
-            draft.items[to],
-            draft.items[from],
-          ];
-        }
-      }),
     setOverallFeedback: ({ threadId, value }) =>
       mutate(threadId, (draft) => {
         draft.overallFeedback = value;
@@ -109,7 +125,11 @@ export default function plugin(bb: BbPluginApi) {
           threadId,
           mode: "auto",
           input: [
-            { type: "text", text: formatRevisionRequest(draft), mentions: [] },
+            {
+              type: "text",
+              text: formatRevisionRequest(draft.items, draft.overallFeedback),
+              mentions: [],
+            },
           ],
         });
         const cleared = await write(empty(threadId));

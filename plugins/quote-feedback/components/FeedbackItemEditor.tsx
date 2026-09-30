@@ -58,14 +58,14 @@ export function FeedbackItemEditor({
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave({ kind: "comment", body });
+        onSave({ body });
       }}
     >
       <blockquote className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm">
         {quote}
       </blockquote>
       <label className="block text-sm">
-        Comment or removal reason
+        Comment
         <textarea
           ref={textareaRef}
           autoFocus
@@ -92,15 +92,7 @@ export function FeedbackItemEditor({
       </label>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={busy || !body.trim()}>
-          Comment
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy}
-          onClick={() => onSave({ kind: "remove", body })}
-        >
-          Remove
+          Save
         </Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
           Cancel

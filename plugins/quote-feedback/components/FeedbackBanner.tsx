@@ -173,11 +173,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-foreground">“{item.quote}”</p>
                     <p className="truncate text-muted-foreground">
-                      {item.kind === "comment"
-                        ? `Comment: ${item.body}`
-                        : item.body
-                          ? `Remove · ${item.body}`
-                          : "Remove"}
+                      {`Comment: ${item.body}`}
                     </p>
                   </div>
                   <Button
@@ -204,7 +200,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
             </ol>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Select assistant text and choose Feedback, or add an overall note
+              Select assistant text and choose Quote, or add an overall note
               in the message box below.
             </p>
           )}

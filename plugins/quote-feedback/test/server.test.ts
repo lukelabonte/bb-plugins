@@ -34,6 +34,9 @@ async function setup(
     get harness() {
       return host.harness;
     },
+    get bb() {
+      return host.bb;
+    },
     call,
     send,
     reload: async () => {
@@ -48,7 +51,7 @@ const input = (invocationId = "a", threadId = "t") => ({
   invocationId,
   message: { id: "m", threadId, role: "assistant", sourceSeqEnd: 3 },
   selectedText: " exact\nquote ",
-  feedback: { kind: "comment", body: "Explain this" },
+  feedback: { body: "Explain this" },
 });
 
 const result = (response: any) => {
@@ -57,7 +60,7 @@ const result = (response: any) => {
 };
 
 describe("draft RPC", () => {
-  it("persists, isolates, edits, reorders, removes and reloads", async () => {
+  it("persists, isolates, edits, removes and reloads; quotes keep creation order", async () => {
     const h = await setup();
     expect(result(await h.call("getDraft", { threadId: "t" })).items).toEqual(
       [],
@@ -69,22 +72,20 @@ describe("draft RPC", () => {
     expect(
       result(await h.call("getDraft", { threadId: "other" })).items,
     ).toEqual([]);
+    // Reordering is gone: quotes render in creation order only.
+    expect(
+      await h.call("moveItem", { threadId: "t", itemId: "b", direction: "up" }),
+    ).toMatchObject({ ok: false });
     let draft = result(
-      await h.call("moveItem", {
-        threadId: "t",
-        itemId: "b",
-        direction: "up",
-      }),
-    );
-    expect(draft.items.map((item: any) => item.id)).toEqual(["b", "a"]);
-    draft = result(
       await h.call("updateItem", {
         threadId: "t",
         itemId: "b",
-        patch: { kind: "remove", body: "" },
+        patch: { body: "Updated comment" },
       }),
     );
-    expect(draft.items[0].kind).toBe("remove");
+    expect(draft.items.map((item: any) => item.id)).toEqual(["a", "b"]);
+    expect(draft.items[1].body).toBe("Updated comment");
+    expect(draft.items[1]).not.toHaveProperty("kind");
     await h.reload();
     expect(result(await h.call("getDraft", { threadId: "t" }))).toEqual(draft);
     expect(
@@ -101,12 +102,33 @@ describe("draft RPC", () => {
     );
   });
 
+  it("migrates legacy drafts: drops kind, keeps removal reasons as comments, drops body-less removals", async () => {
+    const h = await setup();
+    const createdAt = new Date(0).toISOString();
+    await h.bb.storage.kv.set("draft:t", {
+      threadId: "t",
+      overallFeedback: "",
+      updatedAt: createdAt,
+      items: [
+        { id: "c1", messageId: "m", sourceSeqEnd: 1, quote: "quoted one", kind: "comment", body: "Keep this", createdAt },
+        { id: "r1", messageId: "m", sourceSeqEnd: 2, quote: "quoted two", kind: "remove", body: "Redundant", createdAt },
+        { id: "r2", messageId: "m", sourceSeqEnd: 3, quote: "quoted three", kind: "remove", body: "", createdAt },
+      ],
+    });
+    const draft = result(await h.call("getDraft", { threadId: "t" }));
+    expect(draft.items.map((item: any) => item.id)).toEqual(["c1", "r1"]);
+    expect(draft.items[1].body).toBe("Redundant");
+    for (const item of draft.items)
+      expect(item).not.toHaveProperty("kind");
+  });
+
   it("validates role, thread, comment, whitespace and size; deduplicates invocation", async () => {
     const h = await setup();
     for (const invalid of [
       { ...input(), selectedText: "  " },
       { ...input(), selectedText: "x".repeat(20001) },
-      { ...input(), feedback: { kind: "comment", body: " " } },
+      { ...input(), feedback: { body: " " } },
+      { ...input(), feedback: { kind: "comment", body: "x" } },
       { ...input(), message: { ...input().message, role: "user" } },
       { ...input(), threadId: "other" },
     ])

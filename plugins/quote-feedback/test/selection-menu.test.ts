@@ -15,7 +15,7 @@ const popover = `
     </div>
     <div class="flex items-center">
       <span class="mx-0.5 h-4 w-px bg-border"></span>
-      <button class="inline-flex">Feedback</button>
+      <button class="inline-flex">Quote</button>
     </div>
     <div class="flex items-center">
       <span class="mx-0.5 h-4 w-px bg-border"></span>

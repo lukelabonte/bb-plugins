@@ -1,4 +1,4 @@
-import type { FeedbackDraft, FeedbackItem } from "../contract";
+import type { FeedbackDraft } from "../contract";
 
 /**
  * Paints staged feedback onto the rendered assistant-message DOM with the CSS
@@ -15,7 +15,7 @@ type CapturedSelection = {
   committed: boolean;
 };
 
-type HighlightKind = FeedbackItem["kind"] | "pending";
+type HighlightState = "quote" | "pending";
 
 const ASSISTANT_MARKDOWN_SELECTOR =
   '[data-message-column] > [data-sidebar-swipe-selectable="true"] [data-markdown-preview]';
@@ -194,7 +194,7 @@ function liveCapturedRange(captured: CapturedSelection) {
 
 let activeDraft: Pick<FeedbackDraft, "threadId" | "items"> | null = null;
 const captured = new Map<string, CapturedSelection>();
-let registryNames: Record<HighlightKind, string> | null = null;
+let registryNames: Record<HighlightState, string> | null = null;
 let observer: MutationObserver | null = null;
 let style: HTMLStyleElement | null = null;
 let rebuildQueued = false;
@@ -210,9 +210,8 @@ function rebuild() {
   if (!registryNames || !("highlights" in CSS) || typeof Highlight === "undefined")
     return;
 
-  const ranges: Record<HighlightKind, Range[]> = {
-    comment: [],
-    remove: [],
+  const ranges: Record<HighlightState, Range[]> = {
+    quote: [],
     pending: [],
   };
   const items = activeDraft?.items ?? [];
@@ -223,7 +222,7 @@ function rebuild() {
     const range = exact ? liveCapturedRange(exact) : null;
     const resolved = range ?? findUniqueAssistantRange(item.quote);
     if (resolved) {
-      ranges[item.kind].push(resolved);
+      ranges.quote.push(resolved);
       if (!range && activeDraft) {
         captured.set(item.id, {
           threadId: activeDraft.threadId,
@@ -245,9 +244,10 @@ function rebuild() {
     }
   }
 
-  for (const kind of ["comment", "remove", "pending"] as const) {
-    const name = registryNames[kind];
-    if (ranges[kind].length) CSS.highlights.set(name, new Highlight(...ranges[kind]));
+  for (const state of ["quote", "pending"] as const) {
+    const name = registryNames[state];
+    if (ranges[state].length)
+      CSS.highlights.set(name, new Highlight(...ranges[state]));
     else CSS.highlights.delete(name);
   }
 }
@@ -260,23 +260,18 @@ function queueRebuild() {
 
 export const feedbackHighlights = {
   mount(generation: number) {
-    const token = Symbol(`inline-feedback-highlights-${generation}`);
+    const token = Symbol(`quote-feedback-highlights-${generation}`);
     activeMount = token;
     registryNames = {
-      comment: `inline-feedback-comment-${generation}`,
-      remove: `inline-feedback-remove-${generation}`,
-      pending: `inline-feedback-pending-${generation}`,
+      quote: `quote-feedback-quote-${generation}`,
+      pending: `quote-feedback-pending-${generation}`,
     };
     style = document.createElement("style");
-    style.dataset.inlineFeedbackHighlights = String(generation);
+    style.dataset.quoteFeedbackHighlights = String(generation);
     style.textContent = `
-      ::highlight(${registryNames.comment}) {
+      ::highlight(${registryNames.quote}) {
         background-color: rgba(250, 204, 21, 0.30);
         text-decoration: underline rgba(202, 138, 4, 0.75);
-      }
-      ::highlight(${registryNames.remove}) {
-        background-color: rgba(248, 113, 113, 0.26);
-        text-decoration: line-through rgba(220, 38, 38, 0.85);
       }
       ::highlight(${registryNames.pending}) {
         background-color: rgba(167, 139, 250, 0.28);

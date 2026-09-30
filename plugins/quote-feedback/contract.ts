@@ -14,18 +14,11 @@ export const messageId = z
   .max(2000)
   .regex(/^[^\x00-\x1f\x7f]+$/);
 
-export const feedbackKind = z.enum(["comment", "remove"]);
-export type FeedbackKind = z.infer<typeof feedbackKind>;
-
 export const feedbackInput = z
   .strictObject({
-    kind: feedbackKind,
     body: z.string().max(10000),
   })
-  .refine(
-    (value) => value.kind === "remove" || !!value.body.trim(),
-    "Comment requires feedback",
-  );
+  .refine((value) => !!value.body.trim(), "Comment requires feedback");
 export type FeedbackInput = z.infer<typeof feedbackInput>;
 
 export const messageSchema = z.strictObject({
@@ -46,14 +39,10 @@ export const feedbackItemSchema = z
     messageId,
     sourceSeqEnd: z.number().int().nonnegative(),
     quote: quoteSchema,
-    kind: feedbackKind,
     body: z.string().max(10000),
     createdAt: z.string(),
   })
-  .refine(
-    (value) => value.kind === "remove" || !!value.body.trim(),
-    "Comment requires feedback",
-  );
+  .refine((value) => !!value.body.trim(), "Comment requires feedback");
 export type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
 export const draftSchema = z
@@ -95,10 +84,6 @@ export const rpcContract = defineRpcContract({
     output: draftSchema,
   },
   removeItem: { input: item, output: draftSchema },
-  moveItem: {
-    input: item.extend({ direction: z.enum(["up", "down"]) }),
-    output: draftSchema,
-  },
   setOverallFeedback: {
     input: thread.extend({ value: z.string().max(20000) }),
     output: draftSchema,

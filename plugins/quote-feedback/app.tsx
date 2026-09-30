@@ -1,4 +1,4 @@
-// bb-plugin-inline-feedback — a BB plugin frontend entry.
+// bb-plugin-quote-feedback — a BB plugin frontend entry.
 //
 // Compiled by `bb plugin build` into dist/app.js + dist/app.css. React and
 // @get-bb/plugin-sdk/app are provided by the BB app at load time (never bundled),
@@ -48,8 +48,8 @@ export default definePluginApp((app) => {
   });
 
   app.slots.messageAction({
-    id: "add-feedback",
-    title: "Feedback",
+    id: "add-quote",
+    title: "Quote",
     icon: "MessageSquare",
     run({ threadId, message, selectedText }) {
       if (
@@ -57,7 +57,7 @@ export default definePluginApp((app) => {
         message.threadId !== threadId ||
         !selectedText?.trim()
       ) {
-        toast.info("Select text in an assistant message to add feedback.");
+        toast.info("Select text in an assistant message to quote.");
         return;
       }
       if (selectedText.length > 20000) {

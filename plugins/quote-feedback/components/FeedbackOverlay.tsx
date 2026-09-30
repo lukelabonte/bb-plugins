@@ -121,13 +121,13 @@ export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 id={titleId} className="text-base font-semibold">
-          {request.mode === "create" ? "Add feedback" : "Edit feedback"}
+          {request.mode === "create" ? "Add quote" : "Edit quote"}
         </h2>
         <Button
           type="button"
           size="sm"
           variant="ghost"
-          aria-label="Close feedback editor"
+          aria-label="Close quote editor"
           disabled={busy}
           onClick={close}
         >
@@ -168,11 +168,11 @@ export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
               feedbackHighlights.setDraft(draft);
               feedbackEditorStore.close();
               toast.success(
-                request.mode === "create" ? "Feedback added." : "Feedback updated.",
+                request.mode === "create" ? "Quote added." : "Quote updated.",
               );
             })
             .catch((error: unknown) =>
-              toast.error("Could not save feedback", {
+              toast.error("Could not save quote", {
                 description: error instanceof Error ? error.message : String(error),
               }),
             )
