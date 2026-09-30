@@ -72,6 +72,88 @@ describe("rendered assistant quote matching", () => {
   });
 });
 
+it("moves the hovered quote's range into the emphasis registry and back", () => {
+  document.body.innerHTML = assistant("<p>Unique emphasis passage.</p>");
+  const originalCss = globalThis.CSS;
+  const originalHighlight = globalThis.Highlight;
+  const registry = new Map<string, Highlight>();
+  class FakeHighlight {
+    readonly ranges: readonly AbstractRange[];
+    constructor(...ranges: AbstractRange[]) {
+      this.ranges = ranges;
+    }
+  }
+  Object.defineProperty(globalThis, "CSS", {
+    configurable: true,
+    value: { ...(originalCss ?? {}), highlights: registry },
+  });
+  Object.defineProperty(globalThis, "Highlight", {
+    configurable: true,
+    value: FakeHighlight,
+  });
+
+  const cleanup = quoteHighlights.mount(11);
+  try {
+    quoteHighlights.setDraft({
+      threadId: "thread-1",
+      items: [
+        {
+          id: "item-1",
+          messageId: "message-1",
+          sourceSeqEnd: 1,
+          quote: "Unique emphasis passage.",
+          body: "Note.",
+          createdAt: new Date(0).toISOString(),
+        },
+      ],
+    });
+    const quoteName = "quote-feedback-quote-11";
+    const emphasisName = "quote-feedback-emphasis-11";
+    expect(
+      (registry.get(quoteName) as unknown as FakeHighlight).ranges,
+    ).toHaveLength(1);
+    expect(registry.has(emphasisName)).toBe(false);
+
+    quoteHighlights.setEmphasis("item-1");
+    expect(registry.has(quoteName)).toBe(false);
+    const emphasized = registry.get(
+      emphasisName,
+    ) as unknown as FakeHighlight;
+    expect(emphasized.ranges).toHaveLength(1);
+    expect((emphasized.ranges[0] as Range).toString()).toBe(
+      "Unique emphasis passage.",
+    );
+    // One neutral brightening state, distinct from the resting underline.
+    const styleText = document.querySelector(
+      "[data-quote-feedback-highlights]",
+    )?.textContent;
+    expect(styleText).toContain(`::highlight(${emphasisName})`);
+
+    quoteHighlights.setEmphasis(null);
+    expect(registry.has(emphasisName)).toBe(false);
+    expect(
+      (registry.get(quoteName) as unknown as FakeHighlight).ranges,
+    ).toHaveLength(1);
+
+    // Emphasizing an unknown id leaves the resting registry untouched.
+    quoteHighlights.setEmphasis("missing");
+    expect(registry.has(emphasisName)).toBe(false);
+    expect(
+      (registry.get(quoteName) as unknown as FakeHighlight).ranges,
+    ).toHaveLength(1);
+  } finally {
+    cleanup();
+    Object.defineProperty(globalThis, "CSS", {
+      configurable: true,
+      value: originalCss,
+    });
+    Object.defineProperty(globalThis, "Highlight", {
+      configurable: true,
+      value: originalHighlight,
+    });
+  }
+});
+
 it("restores the active draft when BB remounts the content script", () => {
   document.body.innerHTML = assistant(
     "<h2>Implementation plan</h2><p>Keep <em>this exact</em> passage.</p>",

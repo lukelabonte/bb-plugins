@@ -15,7 +15,7 @@ type CapturedSelection = {
   committed: boolean;
 };
 
-type HighlightState = "quote" | "pending";
+type HighlightState = "quote" | "pending" | "emphasis";
 
 const ASSISTANT_MARKDOWN_SELECTOR =
   '[data-message-column] > [data-sidebar-swipe-selectable="true"] [data-markdown-preview]';
@@ -194,6 +194,7 @@ function liveCapturedRange(captured: CapturedSelection) {
 
 let activeDraft: Pick<FeedbackDraft, "threadId" | "items"> | null = null;
 const captured = new Map<string, CapturedSelection>();
+let emphasizedId: string | null = null;
 let registryNames: Record<HighlightState, string> | null = null;
 let observer: MutationObserver | null = null;
 let style: HTMLStyleElement | null = null;
@@ -213,6 +214,7 @@ function rebuild() {
   const ranges: Record<HighlightState, Range[]> = {
     quote: [],
     pending: [],
+    emphasis: [],
   };
   const items = activeDraft?.items ?? [];
   const itemIds = new Set(items.map((item) => item.id));
@@ -222,7 +224,9 @@ function rebuild() {
     const range = exact ? liveCapturedRange(exact) : null;
     const resolved = range ?? findUniqueAssistantRange(item.quote);
     if (resolved) {
-      ranges.quote.push(resolved);
+      // The emphasized quote leaves the resting registry so exactly one
+      // neutral brightening style paints it.
+      ranges[item.id === emphasizedId ? "emphasis" : "quote"].push(resolved);
       if (!range && activeDraft) {
         captured.set(item.id, {
           threadId: activeDraft.threadId,
@@ -244,7 +248,7 @@ function rebuild() {
     }
   }
 
-  for (const state of ["quote", "pending"] as const) {
+  for (const state of ["quote", "pending", "emphasis"] as const) {
     const name = registryNames[state];
     if (ranges[state].length)
       CSS.highlights.set(name, new Highlight(...ranges[state]));
@@ -265,6 +269,7 @@ export const quoteHighlights = {
     registryNames = {
       quote: `quote-feedback-quote-${generation}`,
       pending: `quote-feedback-pending-${generation}`,
+      emphasis: `quote-feedback-emphasis-${generation}`,
     };
     style = document.createElement("style");
     style.dataset.quoteFeedbackHighlights = String(generation);
@@ -276,6 +281,10 @@ export const quoteHighlights = {
       ::highlight(${registryNames.pending}) {
         background-color: rgba(167, 139, 250, 0.28);
         text-decoration: underline rgba(124, 58, 237, 0.72);
+      }
+      ::highlight(${registryNames.emphasis}) {
+        background-color: rgba(250, 204, 21, 0.55);
+        text-decoration: underline rgba(202, 138, 4, 1);
       }
     `;
     document.head.appendChild(style);
@@ -293,6 +302,7 @@ export const quoteHighlights = {
       registryNames = null;
       activeMount = null;
       rebuildQueued = false;
+      emphasizedId = null;
       captured.clear();
     };
   },
@@ -323,7 +333,65 @@ export const quoteHighlights = {
     for (const [id, selection] of captured) {
       if (selection.committed && !ids.has(id)) captured.delete(id);
     }
+    if (emphasizedId && !ids.has(emphasizedId)) emphasizedId = null;
     rebuild();
+  },
+
+  /**
+   * Single neutral emphasis state: the named quote's range leaves the
+   * resting yellow-underline registry for the brighter emphasis registry
+   * while hovered (from the transcript, the quote list, or a flash).
+   */
+  setEmphasis(itemId: string | null) {
+    if (emphasizedId === itemId) return;
+    emphasizedId = itemId;
+    rebuild();
+  },
+
+  getEmphasis() {
+    return emphasizedId;
+  },
+
+  /**
+   * Live bounding rect of a captured selection (create) or committed quote
+   * (edit), or null when the range no longer resolves — callers fail open.
+   */
+  passageRect(id: string): DOMRect | null {
+    const selection = captured.get(id);
+    const range = selection ? liveCapturedRange(selection) : null;
+    return range?.getBoundingClientRect() ?? null;
+  },
+
+  /**
+   * Client rects of every committed quote's live range, for pointer
+   * hit-testing. Quotes whose ranges no longer resolve are skipped.
+   */
+  itemRects(): Map<string, DOMRect[]> {
+    const rects = new Map<string, DOMRect[]>();
+    for (const item of activeDraft?.items ?? []) {
+      const selection = captured.get(item.id);
+      const range = selection ? liveCapturedRange(selection) : null;
+      if (!range) continue;
+      rects.set(item.id, [...range.getClientRects()]);
+    }
+    return rects;
+  },
+
+  /** Scrolls a quote's passage into view; false when it cannot resolve. */
+  revealItem(id: string): boolean {
+    const selection = captured.get(id);
+    let range = selection ? liveCapturedRange(selection) : null;
+    if (!range) {
+      const item = activeDraft?.items.find((entry) => entry.id === id);
+      range = item ? findUniqueAssistantRange(item.quote) : null;
+    }
+    if (!range) return false;
+    const element =
+      range.startContainer instanceof Element
+        ? range.startContainer
+        : range.startContainer.parentElement;
+    element?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    return true;
   },
 
   deactivateThread(threadId: string) {

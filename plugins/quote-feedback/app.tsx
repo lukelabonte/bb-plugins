@@ -5,10 +5,11 @@
 // so this file must be loaded by BB, not imported directly.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { QuoteBanner } from "./components/QuoteBanner";
 import { QuoteOverlay } from "./components/QuoteOverlay";
+import { QuotePill } from "./components/QuotePill";
 import { quoteEditorStore } from "./lib/editor-store";
 import { quoteHighlights } from "./lib/highlights";
+import { mountQuoteHoverTracking } from "./lib/hover-tracking";
 import { hideAddToChatInSelectionPopover } from "./lib/selection-menu";
 
 export default definePluginApp((app) => {
@@ -16,6 +17,7 @@ export default definePluginApp((app) => {
     id: "quote-highlights",
     mount({ generation }) {
       const disposeHighlights = quoteHighlights.mount(generation);
+      const disposeHoverTracking = mountQuoteHoverTracking();
       // The popover mounts fresh on every selection, so the hide re-runs on
       // DOM change. Debounced to one microtask per mutation batch.
       let queued = false;
@@ -31,6 +33,7 @@ export default definePluginApp((app) => {
       hideAddToChatInSelectionPopover();
       return () => {
         disposeHighlights();
+        disposeHoverTracking();
         observer.disconnect();
       };
     },
@@ -44,7 +47,7 @@ export default definePluginApp((app) => {
   app.composer.customize({
     id: "thread-quotes",
     scopes: ["thread"],
-    banners: [{ id: "draft", chrome: "bare", component: QuoteBanner }],
+    banners: [{ id: "draft", chrome: "bare", component: QuotePill }],
   });
 
   app.slots.messageAction({

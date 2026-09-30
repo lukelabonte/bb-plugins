@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -14,9 +15,11 @@ import {
   type ExperimentalAppOverlayProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { rpcContract } from "../contract";
+import type { FeedbackItem, rpcContract } from "../contract";
 import { quoteEditorStore } from "../lib/editor-store";
 import { quoteHighlights } from "../lib/highlights";
+import { placePopover } from "../lib/popover-placement";
+import { QuoteHoverPopover } from "./QuoteHoverPopover";
 import { QuoteItemEditor } from "./QuoteItemEditor";
 import { Button } from "@/components/ui/button";
 
@@ -71,12 +74,18 @@ export function QuoteOverlay(_props: ExperimentalAppOverlayProps) {
   const viewportStyle = useVisibleMobileViewport(request !== null);
 
   // The overlay is app-wide, so it owns restoring passage highlights for
-  // whichever thread is visible, independent of the composer banner.
+  // whichever thread is visible, independent of the composer pill.
+  const [highlightDraft, setHighlightDraft] = useState<{
+    threadId: string;
+    items: FeedbackItem[];
+  } | null>(null);
   const loadHighlightDraft = useCallback(async () => {
     if (!visibleThreadId) return;
     const draft = await rpc.call("getDraft", { threadId: visibleThreadId });
-    if (visibleThreadRef.current === visibleThreadId)
+    if (visibleThreadRef.current === visibleThreadId) {
       quoteHighlights.setDraft(draft);
+      setHighlightDraft({ threadId: draft.threadId, items: draft.items });
+    }
   }, [rpc, visibleThreadId]);
 
   useEffect(() => {
@@ -91,6 +100,64 @@ export function QuoteOverlay(_props: ExperimentalAppOverlayProps) {
   useRealtime("draft-changed", () => {
     void loadHighlightDraft().catch(() => {});
   });
+
+  // Anchored placement: the editor tracks the live passage rect (selection
+  // range for create, resolved quote range for edit) and flips above/below
+  // at viewport edges. No rect → fail open to the fixed position classes.
+  const sectionRef = useRef<HTMLElement>(null);
+  const [anchorStyle, setAnchorStyle] = useState<CSSProperties | null>(null);
+  const anchorId =
+    request?.mode === "create"
+      ? request.selection.invocationId
+      : request?.mode === "edit"
+        ? request.item.id
+        : null;
+
+  useLayoutEffect(() => {
+    if (!anchorId) {
+      setAnchorStyle(null);
+      return;
+    }
+    const reposition = () => {
+      const rect = quoteHighlights.passageRect(anchorId);
+      if (!rect) {
+        setAnchorStyle(null);
+        return;
+      }
+      // Fixed coordinates live in the layout viewport; the visual viewport
+      // shrinks under the software keyboard, so place against it.
+      const visual = window.visualViewport;
+      const viewport = visual
+        ? { width: visual.width, height: visual.height }
+        : { width: window.innerWidth, height: window.innerHeight };
+      const width = Math.min(448, viewport.width - 16);
+      const placement = placePopover(rect, viewport, {
+        width,
+        height: sectionRef.current?.offsetHeight ?? 320,
+      });
+      setAnchorStyle({
+        top: placement.top + (visual?.offsetTop ?? 0),
+        left: placement.left + (visual?.offsetLeft ?? 0),
+        right: "auto",
+        bottom: "auto",
+        width,
+      });
+    };
+    reposition();
+    window.addEventListener("scroll", reposition, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, { capture: true });
+      window.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("scroll", reposition);
+    };
+  }, [anchorId]);
 
   const close = () => {
     if (busy) return;
@@ -109,76 +176,89 @@ export function QuoteOverlay(_props: ExperimentalAppOverlayProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [request, busy]);
 
-  if (!request) return null;
-
   return (
-    <section
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby={titleId}
-      style={viewportStyle}
-      className="fixed left-3 right-3 top-[max(0.5rem,env(safe-area-inset-top))] z-50 max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-border bg-background p-4 shadow-xl sm:bottom-[max(5rem,env(safe-area-inset-bottom))] sm:left-auto sm:right-4 sm:top-auto sm:max-h-[min(34rem,calc(100vh-6rem))] sm:w-full sm:max-w-md"
-    >
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id={titleId} className="text-base font-semibold">
-          {request.mode === "create" ? "Add quote" : "Edit quote"}
-        </h2>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          aria-label="Close quote editor"
-          disabled={busy}
-          onClick={close}
+    <>
+      {highlightDraft && highlightDraft.threadId === visibleThreadId ? (
+        <QuoteHoverPopover
+          threadId={visibleThreadId}
+          items={highlightDraft.items}
+          onDeleted={() => void loadHighlightDraft().catch(() => {})}
+        />
+      ) : null}
+      {!request ? null : (
+        <section
+          ref={sectionRef}
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby={titleId}
+          style={anchorStyle ?? viewportStyle}
+          className="fixed left-3 right-3 top-[max(0.5rem,env(safe-area-inset-top))] z-50 max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-border bg-background p-4 shadow-xl sm:bottom-[max(5rem,env(safe-area-inset-bottom))] sm:left-auto sm:right-4 sm:top-auto sm:max-h-[min(34rem,calc(100vh-6rem))] sm:w-full sm:max-w-md"
         >
-          ×
-        </Button>
-      </div>
-      <QuoteItemEditor
-        key={
-          request.mode === "create"
-            ? request.selection.invocationId
-            : request.item.id
-        }
-        quote={
-          request.mode === "create"
-            ? request.selection.selectedText
-            : request.item.quote
-        }
-        initial={request.mode === "edit" ? request.item : undefined}
-        busy={busy}
-        onCancel={close}
-        onSave={(input) => {
-          if (busy) return;
-          setBusy(true);
-          const operation =
-            request.mode === "create"
-              ? rpc.call("addItem", {
-                  threadId: request.selection.message.threadId,
-                  ...request.selection,
-                  feedback: input,
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 id={titleId} className="text-base font-semibold">
+              {request.mode === "create" ? "Add quote" : "Edit quote"}
+            </h2>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label="Close quote editor"
+              disabled={busy}
+              onClick={close}
+            >
+              ×
+            </Button>
+          </div>
+          <QuoteItemEditor
+            key={
+              request.mode === "create"
+                ? request.selection.invocationId
+                : request.item.id
+            }
+            quote={
+              request.mode === "create"
+                ? request.selection.selectedText
+                : request.item.quote
+            }
+            initial={request.mode === "edit" ? request.item : undefined}
+            busy={busy}
+            onCancel={close}
+            onSave={(input) => {
+              if (busy) return;
+              setBusy(true);
+              const operation =
+                request.mode === "create"
+                  ? rpc.call("addItem", {
+                      threadId: request.selection.message.threadId,
+                      ...request.selection,
+                      feedback: input,
+                    })
+                  : rpc.call("updateItem", {
+                      threadId: request.threadId,
+                      itemId: request.item.id,
+                      patch: input,
+                    });
+              void operation
+                .then((draft) => {
+                  quoteHighlights.setDraft(draft);
+                  quoteEditorStore.close();
+                  toast.success(
+                    request.mode === "create"
+                      ? "Quote added."
+                      : "Quote updated.",
+                  );
                 })
-              : rpc.call("updateItem", {
-                  threadId: request.threadId,
-                  itemId: request.item.id,
-                  patch: input,
-                });
-          void operation
-            .then((draft) => {
-              quoteHighlights.setDraft(draft);
-              quoteEditorStore.close();
-              toast.success(
-                request.mode === "create" ? "Quote added." : "Quote updated.",
-              );
-            })
-            .catch((error: unknown) =>
-              toast.error("Could not save quote", {
-                description: error instanceof Error ? error.message : String(error),
-              }),
-            )
-            .finally(() => setBusy(false));
-        }}
-      />
-    </section>
+                .catch((error: unknown) =>
+                  toast.error("Could not save quote", {
+                    description:
+                      error instanceof Error ? error.message : String(error),
+                  }),
+                )
+                .finally(() => setBusy(false));
+            }}
+          />
+        </section>
+      )}
+    </>
   );
 }
