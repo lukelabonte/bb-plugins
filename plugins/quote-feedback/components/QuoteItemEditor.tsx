@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { FeedbackInput } from "../contract";
 
-export function FeedbackItemEditor({
+export function QuoteItemEditor({
   quote,
   initial,
   busy,
@@ -21,7 +21,7 @@ export function FeedbackItemEditor({
 
   useEffect(() => {
     let queued: number | undefined;
-    const focusFeedback = () => {
+    const focusComment = () => {
       textareaRef.current?.focus({ preventScroll: true });
     };
     const queueFocusCheck = () => {
@@ -29,7 +29,7 @@ export function FeedbackItemEditor({
       queued = window.setTimeout(() => {
         const form = formRef.current;
         const active = document.activeElement;
-        if (form && (!active || !form.contains(active))) focusFeedback();
+        if (form && (!active || !form.contains(active))) focusComment();
       }, 0);
     };
 
@@ -38,7 +38,7 @@ export function FeedbackItemEditor({
     // remain focusable afterwards.
     document.addEventListener("focusin", queueFocusCheck);
     document.addEventListener("focusout", queueFocusCheck);
-    const initialFocus = window.setTimeout(focusFeedback, 0);
+    const initialFocus = window.setTimeout(focusComment, 0);
     const stopGuard = window.setTimeout(() => {
       document.removeEventListener("focusin", queueFocusCheck);
       document.removeEventListener("focusout", queueFocusCheck);
@@ -69,7 +69,7 @@ export function FeedbackItemEditor({
         <textarea
           ref={textareaRef}
           autoFocus
-          aria-label="Feedback text"
+          aria-label="Comment text"
           className="mt-1 w-full rounded border border-border bg-background p-2"
           rows={4}
           value={body}

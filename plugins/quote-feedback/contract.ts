@@ -18,7 +18,7 @@ export const feedbackInput = z
   .strictObject({
     body: z.string().max(10000),
   })
-  .refine((value) => !!value.body.trim(), "Comment requires feedback");
+  .refine((value) => !!value.body.trim(), "Quote requires a comment");
 export type FeedbackInput = z.infer<typeof feedbackInput>;
 
 export const messageSchema = z.strictObject({
@@ -42,7 +42,7 @@ export const feedbackItemSchema = z
     body: z.string().max(10000),
     createdAt: z.string(),
   })
-  .refine((value) => !!value.body.trim(), "Comment requires feedback");
+  .refine((value) => !!value.body.trim(), "Quote requires a comment");
 export type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 
 export const draftSchema = z

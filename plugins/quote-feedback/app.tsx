@@ -5,17 +5,17 @@
 // so this file must be loaded by BB, not imported directly.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { FeedbackBanner } from "./components/FeedbackBanner";
-import { FeedbackOverlay } from "./components/FeedbackOverlay";
-import { feedbackEditorStore } from "./lib/editor-store";
-import { feedbackHighlights } from "./lib/highlights";
+import { QuoteBanner } from "./components/QuoteBanner";
+import { QuoteOverlay } from "./components/QuoteOverlay";
+import { quoteEditorStore } from "./lib/editor-store";
+import { quoteHighlights } from "./lib/highlights";
 import { hideAddToChatInSelectionPopover } from "./lib/selection-menu";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({
-    id: "feedback-highlights",
+    id: "quote-highlights",
     mount({ generation }) {
-      const disposeHighlights = feedbackHighlights.mount(generation);
+      const disposeHighlights = quoteHighlights.mount(generation);
       // The popover mounts fresh on every selection, so the hide re-runs on
       // DOM change. Debounced to one microtask per mutation batch.
       let queued = false;
@@ -37,14 +37,14 @@ export default definePluginApp((app) => {
   });
 
   app.slots.experimental_appOverlay({
-    id: "feedback-editor",
-    component: FeedbackOverlay,
+    id: "quote-editor",
+    component: QuoteOverlay,
   });
 
   app.composer.customize({
-    id: "thread-feedback",
+    id: "thread-quotes",
     scopes: ["thread"],
-    banners: [{ id: "draft", chrome: "bare", component: FeedbackBanner }],
+    banners: [{ id: "draft", chrome: "bare", component: QuoteBanner }],
   });
 
   app.slots.messageAction({
@@ -65,8 +65,8 @@ export default definePluginApp((app) => {
         return;
       }
       const invocationId = crypto.randomUUID();
-      feedbackHighlights.captureSelection(invocationId, threadId, selectedText);
-      feedbackEditorStore.open({
+      quoteHighlights.captureSelection(invocationId, threadId, selectedText);
+      quoteEditorStore.open({
         mode: "create",
         selection: {
           invocationId,

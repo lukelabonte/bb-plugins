@@ -41,12 +41,12 @@ it("hides the whole Add to chat cell and the orphaned leading divider", () => {
   expect(cells[0].hidden).toBe(true);
   expect(cells[0].style.display).toBe("none");
 
-  const feedbackCell = cells[1];
-  const divider = feedbackCell.querySelector("span") as HTMLElement;
-  const feedback = feedbackCell.querySelector("button") as HTMLElement;
-  expect(feedbackCell.hidden).toBe(false);
+  const quoteCell = cells[1];
+  const divider = quoteCell.querySelector("span") as HTMLElement;
+  const quoteButton = quoteCell.querySelector("button") as HTMLElement;
+  expect(quoteCell.hidden).toBe(false);
   expect(divider.style.display).toBe("none");
-  expect(feedback.style.display).toBe("");
+  expect(quoteButton.style.display).toBe("");
 
   // Later cells keep their dividers — only the first visible one is orphaned.
   const readAloudDivider = cells[2].querySelector("span") as HTMLElement;

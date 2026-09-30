@@ -1,19 +1,19 @@
 import type { FeedbackItem, Selection } from "../contract";
 
-export type FeedbackEditorRequest =
+export type QuoteEditorRequest =
   | { mode: "create"; selection: Selection }
   | { mode: "edit"; threadId: string; item: FeedbackItem };
 
-let current: FeedbackEditorRequest | null = null;
+let current: QuoteEditorRequest | null = null;
 const listeners = new Set<() => void>();
 
-export const feedbackEditorStore = {
+export const quoteEditorStore = {
   getSnapshot: () => current,
   subscribe(listener: () => void) {
     listeners.add(listener);
     return () => listeners.delete(listener);
   },
-  open(request: FeedbackEditorRequest) {
+  open(request: QuoteEditorRequest) {
     current = request;
     for (const listener of listeners) listener();
   },

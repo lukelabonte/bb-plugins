@@ -7,22 +7,22 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { FeedbackDraft, FeedbackItem, rpcContract } from "../contract";
-import { feedbackEditorStore } from "../lib/editor-store";
-import { feedbackHighlights } from "../lib/highlights";
+import { quoteEditorStore } from "../lib/editor-store";
+import { quoteHighlights } from "../lib/highlights";
 import { Button } from "@/components/ui/button";
 
-export function FeedbackBanner() {
+export function QuoteBanner() {
   const view = useComposerView();
   if (view.scope.kind !== "thread") return null;
   return (
-    <ThreadFeedbackBanner
+    <ThreadQuoteBanner
       key={view.scope.threadId}
       threadId={view.scope.threadId}
     />
   );
 }
 
-function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
+function ThreadQuoteBanner({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
   const view = useComposerView();
@@ -37,7 +37,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
 
   const accept = useCallback((next: FeedbackDraft) => {
     if (!mounted.current) return;
-    feedbackHighlights.setDraft(next);
+    quoteHighlights.setDraft(next);
     setDraft(next);
   }, []);
 
@@ -72,7 +72,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);
-      toast.error("Could not update feedback", { description: message });
+      toast.error("Could not update quote", { description: message });
     } finally {
       active.current = false;
       setBusy(false);
@@ -90,7 +90,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
       accept(result.draft);
       if (composerText.trim()) composer.clear();
       setExpanded(false);
-      toast.success(`Feedback submitted (${result.delivery}).`);
+      toast.success(`Quotes submitted (${result.delivery}).`);
     });
 
   const remove = (item: FeedbackItem) =>
@@ -104,7 +104,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
         role="alert"
         className="rounded-lg border border-destructive/50 bg-card p-3 text-sm"
       >
-        <span className="text-destructive">Could not load feedback.</span>{" "}
+        <span className="text-destructive">Could not load quotes.</span>{" "}
         <Button size="sm" variant="outline" onClick={() => void load()}>
           Retry
         </Button>
@@ -152,7 +152,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
           ) : null}
           {hasFeedback ? (
             <Button size="sm" disabled={busy} onClick={send}>
-              {busy ? "Working…" : "Send feedback"}
+              {busy ? "Working…" : "Send quotes"}
             </Button>
           ) : null}
         </div>
@@ -181,7 +181,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
                     variant="ghost"
                     disabled={busy}
                     onClick={() =>
-                      feedbackEditorStore.open({ mode: "edit", threadId, item })
+                      quoteEditorStore.open({ mode: "edit", threadId, item })
                     }
                   >
                     Edit
@@ -189,7 +189,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label={`Remove feedback ${index + 1}`}
+                    aria-label={`Remove quote ${index + 1}`}
                     disabled={busy}
                     onClick={() => remove(item)}
                   >
@@ -246,7 +246,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
             {hasFeedback && confirmingClear ? (
               <div
                 role="group"
-                aria-label="Confirm clearing all feedback"
+                aria-label="Confirm clearing all quotes"
                 className="flex items-center gap-1"
               >
                 <Button
@@ -274,7 +274,7 @@ function ThreadFeedbackBanner({ threadId }: { threadId: string }) {
             ) : null}
             {hasFeedback ? (
               <Button size="sm" disabled={busy} onClick={send}>
-                {busy ? "Working…" : "Send feedback"}
+                {busy ? "Working…" : "Send quotes"}
               </Button>
             ) : null}
           </div>

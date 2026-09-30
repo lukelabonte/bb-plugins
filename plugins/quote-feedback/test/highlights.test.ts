@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import type { FeedbackDraft } from "../contract";
-import { feedbackHighlights, findUniqueAssistantRange } from "../lib/highlights";
+import { quoteHighlights, findUniqueAssistantRange } from "../lib/highlights";
 
 const assistant = (html: string) => `
   <div data-message-column class="group/message">
@@ -11,7 +11,7 @@ const assistant = (html: string) => `
   </div>`;
 
 afterEach(() => {
-  feedbackHighlights.deactivateThread("thread-1");
+  quoteHighlights.deactivateThread("thread-1");
   document.body.replaceChildren();
   document.head
     .querySelectorAll("[data-quote-feedback-highlights]")
@@ -94,7 +94,7 @@ it("restores the active draft when BB remounts the content script", () => {
     value: FakeHighlight,
   });
 
-  const cleanupFirstMount = feedbackHighlights.mount(9);
+  const cleanupFirstMount = quoteHighlights.mount(9);
   let cleanupActiveMount = cleanupFirstMount;
   try {
     const selectionRange = document.createRange();
@@ -111,7 +111,7 @@ it("restores the active draft when BB remounts the content script", () => {
     selection?.removeAllRanges();
     selection?.addRange(selectionRange);
     const quote = "Implementation plan\nKeep this exact passage.";
-    feedbackHighlights.captureSelection("item-1", "thread-1", quote);
+    quoteHighlights.captureSelection("item-1", "thread-1", quote);
 
     const draft: FeedbackDraft = {
       threadId: "thread-1",
@@ -129,7 +129,7 @@ it("restores the active draft when BB remounts the content script", () => {
       ],
     };
     const before = document.querySelector("[data-markdown-preview]")?.innerHTML;
-    feedbackHighlights.setDraft(draft);
+    quoteHighlights.setDraft(draft);
 
     const highlight = registry.get(
       "quote-feedback-quote-9",
@@ -148,7 +148,7 @@ it("restores the active draft when BB remounts the content script", () => {
     );
 
     cleanupFirstMount();
-    cleanupActiveMount = feedbackHighlights.mount(10);
+    cleanupActiveMount = quoteHighlights.mount(10);
     const restored = registry.get(
       "quote-feedback-quote-10",
     ) as unknown as FakeHighlight;
@@ -157,7 +157,7 @@ it("restores the active draft when BB remounts the content script", () => {
       quote.replace(/\s/gu, ""),
     );
 
-    feedbackHighlights.setDraft({ ...draft, items: [] });
+    quoteHighlights.setDraft({ ...draft, items: [] });
     expect(registry.size).toBe(0);
   } finally {
     cleanupActiveMount();

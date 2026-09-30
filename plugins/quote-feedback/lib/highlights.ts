@@ -1,7 +1,7 @@
 import type { FeedbackDraft } from "../contract";
 
 /**
- * Paints staged feedback onto the rendered assistant-message DOM with the CSS
+ * Paints staged quotes onto the rendered assistant-message DOM with the CSS
  * Custom Highlight API. BB exposes no persistent selection anchors, so a
  * stored passage is restored only when it produces exactly one normalized
  * text match across the visible assistant-message roots; ambiguous passages
@@ -258,7 +258,7 @@ function queueRebuild() {
   queueMicrotask(rebuild);
 }
 
-export const feedbackHighlights = {
+export const quoteHighlights = {
   mount(generation: number) {
     const token = Symbol(`quote-feedback-highlights-${generation}`);
     activeMount = token;

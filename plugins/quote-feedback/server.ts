@@ -80,7 +80,7 @@ export default function plugin(bb: BbPluginApi) {
   const indexOf = (draft: FeedbackDraft, itemId: string) => {
     const index = draft.items.findIndex((item) => item.id === itemId);
     if (index < 0)
-      throw new Error("Feedback item no longer exists. Reload the draft.");
+      throw new Error("Quote no longer exists. Reload the draft.");
     return index;
   };
 
@@ -118,7 +118,7 @@ export default function plugin(bb: BbPluginApi) {
       serial(threadId, async () => {
         const draft = await read(threadId);
         if (!draft.items.length && !draft.overallFeedback.trim())
-          throw new Error("Add feedback before sending");
+          throw new Error("Add a quote before sending");
         // The draft clears only after the delivery is accepted; a failed
         // send leaves every staged item in place.
         const result = await bb.sdk.threads.send({

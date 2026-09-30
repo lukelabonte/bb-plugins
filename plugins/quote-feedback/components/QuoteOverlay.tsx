@@ -15,9 +15,9 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../contract";
-import { feedbackEditorStore } from "../lib/editor-store";
-import { feedbackHighlights } from "../lib/highlights";
-import { FeedbackItemEditor } from "./FeedbackItemEditor";
+import { quoteEditorStore } from "../lib/editor-store";
+import { quoteHighlights } from "../lib/highlights";
+import { QuoteItemEditor } from "./QuoteItemEditor";
 import { Button } from "@/components/ui/button";
 
 /** Keeps the floating editor above the software keyboard on compact viewports. */
@@ -56,11 +56,11 @@ function useVisibleMobileViewport(open: boolean): CSSProperties | undefined {
   return style;
 }
 
-export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
+export function QuoteOverlay(_props: ExperimentalAppOverlayProps) {
   const request = useSyncExternalStore(
-    feedbackEditorStore.subscribe,
-    feedbackEditorStore.getSnapshot,
-    feedbackEditorStore.getSnapshot,
+    quoteEditorStore.subscribe,
+    quoteEditorStore.getSnapshot,
+    quoteEditorStore.getSnapshot,
   );
   const rpc = useRpc<typeof rpcContract>();
   const { threadId: visibleThreadId } = useBbContext();
@@ -76,17 +76,17 @@ export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
     if (!visibleThreadId) return;
     const draft = await rpc.call("getDraft", { threadId: visibleThreadId });
     if (visibleThreadRef.current === visibleThreadId)
-      feedbackHighlights.setDraft(draft);
+      quoteHighlights.setDraft(draft);
   }, [rpc, visibleThreadId]);
 
   useEffect(() => {
     if (!visibleThreadId) return;
     void loadHighlightDraft().catch(() => {
       if (visibleThreadRef.current === visibleThreadId) {
-        feedbackHighlights.deactivateThread(visibleThreadId);
+        quoteHighlights.deactivateThread(visibleThreadId);
       }
     });
-    return () => feedbackHighlights.deactivateThread(visibleThreadId);
+    return () => quoteHighlights.deactivateThread(visibleThreadId);
   }, [loadHighlightDraft, visibleThreadId]);
   useRealtime("draft-changed", () => {
     void loadHighlightDraft().catch(() => {});
@@ -95,9 +95,9 @@ export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
   const close = () => {
     if (busy) return;
     if (request?.mode === "create") {
-      feedbackHighlights.cancelSelection(request.selection.invocationId);
+      quoteHighlights.cancelSelection(request.selection.invocationId);
     }
-    feedbackEditorStore.close();
+    quoteEditorStore.close();
   };
 
   useEffect(() => {
@@ -134,7 +134,7 @@ export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
           ×
         </Button>
       </div>
-      <FeedbackItemEditor
+      <QuoteItemEditor
         key={
           request.mode === "create"
             ? request.selection.invocationId
@@ -148,7 +148,7 @@ export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
         initial={request.mode === "edit" ? request.item : undefined}
         busy={busy}
         onCancel={close}
-        onSave={(feedback) => {
+        onSave={(input) => {
           if (busy) return;
           setBusy(true);
           const operation =
@@ -156,17 +156,17 @@ export function FeedbackOverlay(_props: ExperimentalAppOverlayProps) {
               ? rpc.call("addItem", {
                   threadId: request.selection.message.threadId,
                   ...request.selection,
-                  feedback,
+                  feedback: input,
                 })
               : rpc.call("updateItem", {
                   threadId: request.threadId,
                   itemId: request.item.id,
-                  patch: feedback,
+                  patch: input,
                 });
           void operation
             .then((draft) => {
-              feedbackHighlights.setDraft(draft);
-              feedbackEditorStore.close();
+              quoteHighlights.setDraft(draft);
+              quoteEditorStore.close();
               toast.success(
                 request.mode === "create" ? "Quote added." : "Quote updated.",
               );
