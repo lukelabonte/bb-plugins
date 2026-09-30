@@ -168,7 +168,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
     <div
       ref={wrapperRef}
       data-quote-feedback-ui
-      className="relative inline-block"
+      className="relative inline-block w-fit self-start"
       onMouseEnter={enterHover}
       onMouseLeave={leaveHover}
     >
