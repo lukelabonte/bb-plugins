@@ -1,16 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  useComposer,
-  useComposerView,
-  useRealtime,
-  useRpc,
-} from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
-import type { FeedbackDraft, FeedbackItem, rpcContract } from "../contract";
+import { useEffect, useRef, useState } from "react";
+import { useComposerView } from "@get-bb/plugin-sdk/app";
+import type { FeedbackItem, rpcContract } from "../contract";
 import { quoteEditorStore } from "../lib/editor-store";
-import { formatRevisionRequest } from "../lib/format-revision-request";
 import { quoteHighlights } from "../lib/highlights";
 import { shouldInterceptSubmit } from "../lib/submit-interception";
+import { useStagedQuotes } from "../lib/use-staged-quotes";
+import { useRpc } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 
 export function QuotePill() {
@@ -23,9 +18,8 @@ export function QuotePill() {
 
 function ThreadQuotePill({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
-  const composer = useComposer();
-  const view = useComposerView();
-  const [draft, setDraft] = useState<FeedbackDraft>();
+  const { draft, busy, loadError, mutationError, accept, reload, run, submit } =
+    useStagedQuotes(threadId);
   // Open-state machine over hover: pointer entry opens, leaving closes,
   // click while open dismisses (and it stays dismissed while the pointer
   // remains over the pill), click again re-opens. Leaving always resets to
@@ -33,15 +27,13 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   const [listState, setListState] = useState<"closed" | "open" | "dismissed">(
     "closed",
   );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const active = useRef(false);
-  const mounted = useRef(true);
   const flashTimer = useRef<number | undefined>(undefined);
   // The visual gap between pill and list is outside both boxes; closing is
   // delayed so the pointer can cross it without the list unmounting.
   const hoverTimer = useRef<number | undefined>(undefined);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
 
   const enterHover = () => {
     window.clearTimeout(hoverTimer.current);
@@ -54,84 +46,20 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   const toggleList = () =>
     setListState((state) => (state === "open" ? "dismissed" : "open"));
 
-  const accept = useCallback((next: FeedbackDraft) => {
-    if (!mounted.current) return;
-    quoteHighlights.setDraft(next);
-    setDraft(next);
-  }, []);
-
-  const load = useCallback(async () => {
-    try {
-      accept(await rpc.call("getDraft", { threadId }));
-      setError("");
-    } catch (cause) {
-      if (!mounted.current) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [accept, rpc, threadId]);
-
-  useEffect(() => {
-    mounted.current = true;
-    void load();
-    return () => {
-      mounted.current = false;
+  useEffect(
+    () => () => {
       window.clearTimeout(flashTimer.current);
       window.clearTimeout(hoverTimer.current);
-    };
-  }, [load]);
-  useRealtime("draft-changed", () => {
-    if (!active.current) void load();
-  });
-
-  const run = async (operation: () => Promise<void>) => {
-    if (active.current) return;
-    active.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      await operation();
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setError(message);
-      toast.error("Could not update quote", { description: message });
-    } finally {
-      active.current = false;
-      setBusy(false);
-    }
-  };
+    },
+    [],
+  );
 
   // Single send path (ADR-0002): while quotes are staged, capture-phase
   // listeners intercept the composer's plain Enter or send-button click and
   // submit `formatted quotes + typed text` through the composer's own
-  // pipeline, so the on-screen provider/model/permission/attachments travel.
-  // The draft clears only after the host accepts the submission; a refusal
-  // restores the user's typed text and keeps every staged quote. Nothing
-  // staged → the listeners pass every event through untouched.
-  const submitStaged = useRef<() => void>(() => {});
-  submitStaged.current = () => {
-    const items = draft?.items ?? [];
-    if (active.current || items.length === 0) return;
-    active.current = true;
-    setBusy(true);
-    const typedText = view.draft.text;
-    void (async () => {
-      try {
-        composer.setText(formatRevisionRequest(items, typedText));
-        await composer.experimental_submit({ experimental_data: null });
-        accept(await rpc.call("clearDraft", { threadId }));
-        setListState("closed");
-        toast.success("Quotes sent.");
-      } catch (cause) {
-        composer.setText(typedText);
-        const message = cause instanceof Error ? cause.message : String(cause);
-        toast.error("Could not send quotes", { description: message });
-      } finally {
-        active.current = false;
-        setBusy(false);
-      }
-    })();
-  };
-
+  // pipeline. Nothing staged → every event passes through untouched. The
+  // quotes-only mouse path is the QuoteSendAction composer action: BB's own
+  // send button is disabled on an empty composer and dispatches no clicks.
   useEffect(() => {
     const pluginUi = (target: EventTarget | null) =>
       target instanceof Element &&
@@ -172,7 +100,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
       if (!region?.contains(target)) return;
       event.preventDefault();
       event.stopPropagation();
-      submitStaged.current();
+      submitRef.current();
     };
     const onClick = (event: MouseEvent) => {
       if (
@@ -192,7 +120,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
       if (!button || !region?.contains(button)) return;
       event.preventDefault();
       event.stopPropagation();
-      submitStaged.current();
+      submitRef.current();
     };
     document.addEventListener("keydown", onKeyDown, { capture: true });
     document.addEventListener("click", onClick, { capture: true });
@@ -219,13 +147,13 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   };
 
   if (!draft) {
-    return error ? (
+    return loadError ? (
       <div
         role="alert"
         className="rounded-lg border border-destructive/50 bg-card p-3 text-sm"
       >
         <span className="text-destructive">Could not load quotes.</span>{" "}
-        <Button size="sm" variant="outline" onClick={() => void load()}>
+        <Button size="sm" variant="outline" onClick={() => void reload()}>
           Retry
         </Button>
       </div>
@@ -310,9 +238,9 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
             ))}
           </ol>
 
-          {error ? (
+          {mutationError ? (
             <p role="alert" className="mt-2 text-xs text-destructive">
-              {error}
+              {mutationError}
             </p>
           ) : null}
         </div>

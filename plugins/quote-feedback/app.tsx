@@ -7,6 +7,7 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { QuoteOverlay } from "./components/QuoteOverlay";
 import { QuotePill } from "./components/QuotePill";
+import { QuoteSendAction } from "./components/QuoteSendAction";
 import { quoteEditorStore } from "./lib/editor-store";
 import { quoteHighlights } from "./lib/highlights";
 import { mountQuoteHoverTracking } from "./lib/hover-tracking";
@@ -48,6 +49,7 @@ export default definePluginApp((app) => {
     id: "thread-quotes",
     scopes: ["thread"],
     banners: [{ id: "draft", chrome: "bare", component: QuotePill }],
+    actions: [{ id: "send-quotes", component: QuoteSendAction }],
   });
 
   app.slots.messageAction({
