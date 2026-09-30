@@ -6,10 +6,20 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-const popover = (label: string) => `
-  <div role="dialog" class="z-50 flex w-auto">
+// Mirrors BB 0.44's popover: one flex cell per entry; every cell but the
+// first carries its own leading divider span.
+const popover = `
+  <div role="dialog" class="z-50 flex w-auto items-center gap-0.5">
     <div class="flex items-center">
-      <button class="inline-flex cursor-pointer items-center">${label}</button>
+      <button class="inline-flex">Add to chat</button>
+    </div>
+    <div class="flex items-center">
+      <span class="mx-0.5 h-4 w-px bg-border"></span>
+      <button class="inline-flex">Feedback</button>
+    </div>
+    <div class="flex items-center">
+      <span class="mx-0.5 h-4 w-px bg-border"></span>
+      <button class="inline-flex">Read aloud</button>
     </div>
   </div>`;
 
@@ -22,34 +32,45 @@ const actionBar = `
     </div>
   </div>`;
 
-it("hides Add to chat in the selection popover but keeps sibling entries", () => {
-  document.body.innerHTML = popover("Add to chat") + popover("Feedback");
-  // jsdom lacks portal structure here; wrap both in one dialog like BB does.
+it("hides the whole Add to chat cell and the orphaned leading divider", () => {
+  document.body.innerHTML = popover;
   hideAddToChatInSelectionPopover();
 
-  const buttons = [...document.querySelectorAll("button")];
-  const addToChat = buttons.find((b) => b.textContent === "Add to chat");
-  const feedback = buttons.find((b) => b.textContent === "Feedback");
-  expect(addToChat?.style.display).toBe("none");
-  expect(feedback?.style.display).toBe("");
+  const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+  const cells = [...dialog.children] as HTMLElement[];
+  expect(cells[0].hidden).toBe(true);
+  expect(cells[0].style.display).toBe("none");
+
+  const feedbackCell = cells[1];
+  const divider = feedbackCell.querySelector("span") as HTMLElement;
+  const feedback = feedbackCell.querySelector("button") as HTMLElement;
+  expect(feedbackCell.hidden).toBe(false);
+  expect(divider.style.display).toBe("none");
+  expect(feedback.style.display).toBe("");
+
+  // Later cells keep their dividers — only the first visible one is orphaned.
+  const readAloudDivider = cells[2].querySelector("span") as HTMLElement;
+  expect(readAloudDivider.style.display).toBe("");
 });
 
 it("keeps Add to chat in the per-message hover action bar", () => {
   document.body.innerHTML = actionBar;
   hideAddToChatInSelectionPopover();
 
-  const button = document.querySelector("button");
-  expect(button?.style.display).toBe("");
+  const button = document.querySelector("button") as HTMLElement;
+  expect(button.hidden).toBe(false);
+  expect(button.style.display).toBe("");
 });
 
-it("ignores unrelated buttons and is idempotent on re-run", () => {
+it("is idempotent and leaves unrelated dialogs alone", () => {
   document.body.innerHTML =
-    popover("Add to chat") + `<div role="dialog"><button>Save</button></div>`;
+    popover + `<div role="dialog"><div><span></span><button>Save</button></div></div>`;
   hideAddToChatInSelectionPopover();
   hideAddToChatInSelectionPopover();
 
   const save = [...document.querySelectorAll("button")].find(
     (b) => b.textContent === "Save",
-  );
-  expect(save?.style.display).toBe("");
+  ) as HTMLElement;
+  expect(save.style.display).toBe("");
+  expect((save.parentElement as HTMLElement).hidden).toBe(false);
 });
