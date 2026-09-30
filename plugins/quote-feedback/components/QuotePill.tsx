@@ -25,8 +25,13 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   const view = useComposerView();
   const composerText = view.draft.text;
   const [draft, setDraft] = useState<FeedbackDraft>();
-  const [hovered, setHovered] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  // Open-state machine over hover: pointer entry opens, leaving closes,
+  // click while open dismisses (and it stays dismissed while the pointer
+  // remains over the pill), click again re-opens. Leaving always resets to
+  // closed, so the next hover opens afresh.
+  const [listState, setListState] = useState<"closed" | "open" | "dismissed">(
+    "closed",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const active = useRef(false);
@@ -38,12 +43,14 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
 
   const enterHover = () => {
     window.clearTimeout(hoverTimer.current);
-    setHovered(true);
+    setListState((state) => (state === "dismissed" ? state : "open"));
   };
   const leaveHover = () => {
     window.clearTimeout(hoverTimer.current);
-    hoverTimer.current = window.setTimeout(() => setHovered(false), 200);
+    hoverTimer.current = window.setTimeout(() => setListState("closed"), 200);
   };
+  const toggleList = () =>
+    setListState((state) => (state === "open" ? "dismissed" : "open"));
 
   const accept = useCallback((next: FeedbackDraft) => {
     if (!mounted.current) return;
@@ -102,7 +109,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
       const result = await rpc.call("sendDraft", { threadId });
       accept(result.draft);
       if (composerText.trim()) composer.clear();
-      setPinned(false);
+      setListState("closed");
       toast.success(`Quotes submitted (${result.delivery}).`);
     });
 
@@ -138,7 +145,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
 
   if (draft.items.length === 0) return null;
 
-  const open = hovered || pinned;
+  const open = listState === "open";
   const hasFeedback =
     draft.items.length > 0 ||
     !!draft.overallFeedback.trim() ||
@@ -154,7 +161,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
         type="button"
         aria-expanded={open}
         className="rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-foreground shadow-sm hover:bg-accent"
-        onClick={() => setPinned((value) => !value)}
+        onClick={toggleList}
       >
         Chat quotes {draft.items.length}
       </button>
@@ -163,7 +170,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
         <div
           role="dialog"
           aria-label="Staged quotes"
-          className="absolute bottom-full left-0 z-40 mb-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-background p-2 shadow-xl"
+          className="absolute bottom-full left-0 z-40 mb-2 w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-background p-2 shadow-xl"
         >
           <ol className="max-h-64 space-y-2 overflow-y-auto">
             {draft.items.map((item, index) => (
@@ -178,12 +185,14 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
                 }}
                 onClick={() => flash(item)}
               >
-                <span className="shrink-0 text-muted-foreground">
+                <span className="shrink-0 pt-0.5 text-muted-foreground">
                   {index + 1}.
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-foreground">“{item.quote}”</p>
-                  <p className="truncate text-muted-foreground">
+                  <p className="line-clamp-3 whitespace-pre-wrap break-words text-foreground">
+                    “{item.quote}”
+                  </p>
+                  <p className="mt-0.5 line-clamp-2 break-words text-muted-foreground">
                     {`Comment: ${item.body}`}
                   </p>
                 </div>
