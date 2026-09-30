@@ -12,12 +12,26 @@ import { quoteHoverStore } from "./hover-store";
  * from its passage.
  *
  * The popover root carries `data-quote-feedback-hover`; hit-testing treats
- * pointer targets inside it as "still hovering".
+ * pointer targets inside it as "still hovering" and never re-hits
+ * coordinates, so the popover keeps its quote even while overlapping
+ * another passage.
  */
 export const QUOTE_HOVER_POPOVER_ATTRIBUTE = "data-quote-feedback-hover";
 
+// Module-level close path so the React popover's own actions (Edit/Delete)
+// dismiss the hover session exactly like the tracking layer does: store
+// cleared, tracking emphasis cleared, timers cancelled.
+let closeCurrent: (() => void) | null = null;
+let activeMount: symbol | null = null;
+
+export function dismissQuoteHover() {
+  closeCurrent?.();
+}
+
 export function mountQuoteHoverTracking(): () => void {
-  let queued = false;
+  const token = Symbol("quote-feedback-hover-tracking");
+  activeMount = token;
+  let queued: number | null = null;
   let lastEvent: MouseEvent | null = null;
   // The emphasis this layer set; a flash set by the quote list is left
   // alone until its own timer clears it.
@@ -38,31 +52,36 @@ export function mountQuoteHoverTracking(): () => void {
   };
 
   const close = () => {
+    window.clearTimeout(closeTimer);
     quoteHoverStore.set(null);
     clearTrackingEmphasis();
   };
+  closeCurrent = close;
 
   const settle = () => {
-    queued = false;
+    queued = null;
     const event = lastEvent;
     lastEvent = null;
     if (!event) return;
 
+    // Inside the popover: keep the current quote, never re-hit.
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest(`[${QUOTE_HOVER_POPOVER_ATTRIBUTE}]`) !== null
+    ) {
+      window.clearTimeout(closeTimer);
+      return;
+    }
     const hit = hitTestQuotes(
       { x: event.clientX, y: event.clientY },
       quoteHighlights.itemRects(),
     );
-    const target = event.target;
-    const overPopover =
-      target instanceof Element &&
-      target.closest(`[${QUOTE_HOVER_POPOVER_ATTRIBUTE}]`) !== null;
-    if (hit || overPopover) {
+    if (hit) {
       window.clearTimeout(closeTimer);
-      if (hit) {
-        quoteHoverStore.set(hit);
-        quoteHighlights.setEmphasis(hit);
-        trackingEmphasis = hit;
-      }
+      quoteHoverStore.set(hit);
+      quoteHighlights.setEmphasis(hit);
+      trackingEmphasis = hit;
       return;
     }
     window.clearTimeout(closeTimer);
@@ -71,21 +90,22 @@ export function mountQuoteHoverTracking(): () => void {
 
   const onMouseMove = (event: MouseEvent) => {
     lastEvent = event;
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(settle);
+    if (queued !== null) return;
+    queued = requestAnimationFrame(settle);
   };
-  const onScroll = () => {
-    window.clearTimeout(closeTimer);
-    close();
-  };
+  const onScroll = () => close();
 
   document.addEventListener("mousemove", onMouseMove, { passive: true });
   document.addEventListener("scroll", onScroll, { capture: true, passive: true });
   return () => {
+    if (activeMount !== token) return;
+    activeMount = null;
+    closeCurrent = null;
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("scroll", onScroll, { capture: true });
-    window.clearTimeout(closeTimer);
+    if (queued !== null) cancelAnimationFrame(queued);
+    queued = null;
+    lastEvent = null;
     close();
   };
 }

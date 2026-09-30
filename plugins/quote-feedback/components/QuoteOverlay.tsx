@@ -124,20 +124,32 @@ export function QuoteOverlay(_props: ExperimentalAppOverlayProps) {
         setAnchorStyle(null);
         return;
       }
-      // Fixed coordinates live in the layout viewport; the visual viewport
-      // shrinks under the software keyboard, so place against it.
+      // Fixed coordinates live in the layout viewport; convert the anchor
+      // into visual-viewport space (shrunk by the software keyboard),
+      // place, then convert back.
       const visual = window.visualViewport;
+      const offsetTop = visual?.offsetTop ?? 0;
+      const offsetLeft = visual?.offsetLeft ?? 0;
       const viewport = visual
         ? { width: visual.width, height: visual.height }
         : { width: window.innerWidth, height: window.innerHeight };
       const width = Math.min(448, viewport.width - 16);
-      const placement = placePopover(rect, viewport, {
-        width,
-        height: sectionRef.current?.offsetHeight ?? 320,
-      });
+      const placement = placePopover(
+        {
+          top: rect.top - offsetTop,
+          left: rect.left - offsetLeft,
+          width: rect.width,
+          height: rect.height,
+        },
+        viewport,
+        {
+          width,
+          height: sectionRef.current?.offsetHeight ?? 320,
+        },
+      );
       setAnchorStyle({
-        top: placement.top + (visual?.offsetTop ?? 0),
-        left: placement.left + (visual?.offsetLeft ?? 0),
+        top: placement.top + offsetTop,
+        left: placement.left + offsetLeft,
         right: "auto",
         bottom: "auto",
         width,

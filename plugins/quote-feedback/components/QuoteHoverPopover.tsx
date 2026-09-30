@@ -11,7 +11,10 @@ import type { FeedbackItem, rpcContract } from "../contract";
 import { quoteEditorStore } from "../lib/editor-store";
 import { quoteHighlights } from "../lib/highlights";
 import { quoteHoverStore } from "../lib/hover-store";
-import { QUOTE_HOVER_POPOVER_ATTRIBUTE } from "../lib/hover-tracking";
+import {
+  dismissQuoteHover,
+  QUOTE_HOVER_POPOVER_ATTRIBUTE,
+} from "../lib/hover-tracking";
 import { placePopover } from "../lib/popover-placement";
 import { Button } from "@/components/ui/button";
 
@@ -20,8 +23,10 @@ import { Button } from "@/components/ui/button";
  * comment plus edit (opens the anchored editor in edit mode) and delete
  * (immediate, matching the quote list's per-item ×). Anchored at the
  * passage's live rect; the content-script tracking layer closes it on
- * scroll, so the position is computed once per hover. Fails closed (renders
- * nothing) when the passage no longer resolves.
+ * scroll, so the position is computed once per hover. The root stays
+ * mounted but visibility-hidden until measured, so every fresh open places
+ * against the element's real size. Fails closed (renders nothing) when the
+ * passage no longer resolves.
  */
 export function QuoteHoverPopover({
   threadId,
@@ -39,7 +44,11 @@ export function QuoteHoverPopover({
   );
   const rpc = useRpc<typeof rpcContract>();
   const rootRef = useRef<HTMLDivElement>(null);
-  const [style, setStyle] = useState<CSSProperties | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [placed, setPlaced] = useState<{
+    id: string;
+    style: CSSProperties;
+  } | null>(null);
 
   const item = hoveredId
     ? (items.find((entry) => entry.id === hoveredId) ?? null)
@@ -47,41 +56,64 @@ export function QuoteHoverPopover({
 
   useLayoutEffect(() => {
     if (!item) {
-      setStyle(null);
+      setPlaced(null);
       return;
     }
     const anchor = quoteHighlights.passageRect(item.id);
-    if (!anchor) {
-      setStyle(null);
+    const element = rootRef.current;
+    if (!anchor || !element) {
+      setPlaced(null);
       return;
     }
-    const element = rootRef.current;
+    // getBoundingClientRect is layout-viewport-relative; convert the anchor
+    // into visual-viewport space (shrunk by the software keyboard), place,
+    // then convert back for fixed positioning.
+    const visual = window.visualViewport;
+    const offsetTop = visual?.offsetTop ?? 0;
+    const offsetLeft = visual?.offsetLeft ?? 0;
+    const viewport = visual
+      ? { width: visual.width, height: visual.height }
+      : { width: window.innerWidth, height: window.innerHeight };
     const placement = placePopover(
-      anchor,
-      { width: window.innerWidth, height: window.innerHeight },
       {
-        width: element?.offsetWidth ?? 288,
-        height: element?.offsetHeight ?? 140,
+        top: anchor.top - offsetTop,
+        left: anchor.left - offsetLeft,
+        width: anchor.width,
+        height: anchor.height,
       },
+      viewport,
+      { width: element.offsetWidth, height: element.offsetHeight },
     );
-    setStyle({ top: placement.top, left: placement.left });
+    setPlaced({
+      id: item.id,
+      style: {
+        top: placement.top + offsetTop,
+        left: placement.left + offsetLeft,
+      },
+    });
   }, [item]);
 
-  if (!item || !threadId || !style) return null;
+  if (!item || !threadId) return null;
 
-  const remove = () =>
+  const remove = () => {
+    if (busy) return;
+    setBusy(true);
     void rpc
       .call("removeItem", { threadId, itemId: item.id })
-      .then((draft) => {
-        quoteHighlights.setDraft(draft);
-        quoteHoverStore.set(null);
+      .then(() => {
+        dismissQuoteHover();
         onDeleted();
       })
       .catch((error: unknown) =>
         toast.error("Could not update quote", {
           description: error instanceof Error ? error.message : String(error),
         }),
-      );
+      )
+      .finally(() => setBusy(false));
+  };
+
+  const style: CSSProperties =
+    placed?.id === item.id ? placed.style : { visibility: "hidden" };
 
   return (
     <div
@@ -102,8 +134,9 @@ export function QuoteHoverPopover({
         <Button
           size="sm"
           variant="ghost"
+          disabled={busy}
           onClick={() => {
-            quoteHoverStore.set(null);
+            dismissQuoteHover();
             quoteEditorStore.open({ mode: "edit", threadId, item });
           }}
         >
@@ -113,6 +146,7 @@ export function QuoteHoverPopover({
           size="sm"
           variant="ghost"
           aria-label="Delete quote"
+          disabled={busy}
           onClick={remove}
         >
           ×

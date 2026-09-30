@@ -43,7 +43,9 @@ describe("placePopover", () => {
   });
 
   it("picks the roomier side when the popover fits neither above nor below", () => {
-    const cramped = { width: 1000, height: 300 };
+    // Height 220: a 40px-tall passage leaves at most 152px on a side, and
+    // the 200px popover + 8px gap fits neither.
+    const cramped = { width: 1000, height: 220 };
     const nearTop = placePopover(
       { top: 20, left: 300, width: 200, height: 40 },
       cramped,
@@ -51,7 +53,7 @@ describe("placePopover", () => {
     );
     expect(nearTop.placement).toBe("below");
     const nearBottom = placePopover(
-      { top: 240, left: 300, width: 200, height: 40 },
+      { top: 160, left: 300, width: 200, height: 40 },
       cramped,
       popover,
     );

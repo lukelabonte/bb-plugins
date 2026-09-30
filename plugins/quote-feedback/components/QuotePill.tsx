@@ -32,6 +32,18 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   const active = useRef(false);
   const mounted = useRef(true);
   const flashTimer = useRef<number | undefined>(undefined);
+  // The visual gap between pill and list is outside both boxes; closing is
+  // delayed so the pointer can cross it without the list unmounting.
+  const hoverTimer = useRef<number | undefined>(undefined);
+
+  const enterHover = () => {
+    window.clearTimeout(hoverTimer.current);
+    setHovered(true);
+  };
+  const leaveHover = () => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHovered(false), 200);
+  };
 
   const accept = useCallback((next: FeedbackDraft) => {
     if (!mounted.current) return;
@@ -55,6 +67,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
     return () => {
       mounted.current = false;
       window.clearTimeout(flashTimer.current);
+      window.clearTimeout(hoverTimer.current);
     };
   }, [load]);
   useRealtime("draft-changed", () => {
@@ -134,8 +147,8 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   return (
     <div
       className="relative inline-block"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={enterHover}
+      onMouseLeave={leaveHover}
     >
       <button
         type="button"
