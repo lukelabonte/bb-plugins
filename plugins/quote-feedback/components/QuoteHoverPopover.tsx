@@ -119,6 +119,7 @@ export function QuoteHoverPopover({
     <div
       ref={rootRef}
       {...{ [QUOTE_HOVER_POPOVER_ATTRIBUTE]: true }}
+      data-quote-feedback-ui
       role="dialog"
       aria-label="Quote actions"
       style={style}

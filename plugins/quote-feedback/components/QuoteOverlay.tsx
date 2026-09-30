@@ -200,6 +200,7 @@ export function QuoteOverlay(_props: ExperimentalAppOverlayProps) {
       {!request ? null : (
         <section
           ref={sectionRef}
+          data-quote-feedback-ui
           role="dialog"
           aria-modal="false"
           aria-labelledby={titleId}

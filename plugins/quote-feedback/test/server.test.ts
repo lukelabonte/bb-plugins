@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   createFakePluginHost,
   makeThreadResponse,
@@ -11,13 +11,8 @@ afterEach(async () => {
   for (const host of hosts.splice(0)) await host.harness.lifecycle.dispose();
 });
 
-async function setup(
-  send = vi.fn(async () => ({
-    ok: true as const,
-    delivery: "steered" as const,
-  })),
-) {
-  let host = createFakePluginHost({ sdk: { threads: { send } } });
+async function setup() {
+  let host = createFakePluginHost();
   hosts.push(host);
   await plugin(host.bb);
   const call = async (method: string, input: unknown) => {
@@ -38,7 +33,6 @@ async function setup(
       return host.bb;
     },
     call,
-    send,
     reload: async () => {
       host = await host.harness.lifecycle.reload(plugin);
       hosts.push(host);
@@ -102,7 +96,7 @@ describe("draft RPC", () => {
     );
   });
 
-  it("migrates legacy drafts: drops kind, keeps removal reasons as comments, drops body-less removals", async () => {
+  it("migrates legacy drafts: drops kind and overallFeedback, keeps removal reasons as comments, drops body-less removals", async () => {
     const h = await setup();
     const createdAt = new Date(0).toISOString();
     await h.bb.storage.kv.set("draft:t", {
@@ -120,6 +114,7 @@ describe("draft RPC", () => {
     expect(draft.items[1].body).toBe("Redundant");
     for (const item of draft.items)
       expect(item).not.toHaveProperty("kind");
+    expect(draft).not.toHaveProperty("overallFeedback");
   });
 
   it("validates role, thread, comment, whitespace and size; deduplicates invocation", async () => {
@@ -136,11 +131,11 @@ describe("draft RPC", () => {
     result(await h.call("addItem", input()));
     expect(result(await h.call("addItem", input())).items).toHaveLength(1);
     expect(
-      await h.call("setOverallFeedback", {
-        threadId: "t",
-        value: "x".repeat(20001),
-      }),
+      await h.call("setOverallFeedback", { threadId: "t", value: "x" }),
     ).toMatchObject({ ok: false });
+    expect(await h.call("sendDraft", { threadId: "t" })).toMatchObject({
+      ok: false,
+    });
     for (let index = 0; index < 12; index++)
       await h.call("addItem", {
         ...input(`big${index}`),
@@ -149,51 +144,6 @@ describe("draft RPC", () => {
     const draft = result(await h.call("getDraft", { threadId: "t" }));
     expect(Buffer.byteLength(JSON.stringify(draft))).toBeLessThanOrEqual(220000);
     expect(draft.items.length).toBeLessThan(13);
-  });
-
-  it("sends one batch, preserves failed delivery and prevents concurrent duplicate send", async () => {
-    const send = vi.fn(async () => ({
-      ok: true as const,
-      delivery: "steered" as const,
-    }));
-    const h = await setup(send);
-    expect(await h.call("sendDraft", { threadId: "t" })).toMatchObject({
-      ok: false,
-    });
-    await h.call("addItem", input());
-    await h.call("setOverallFeedback", {
-      threadId: "t",
-      value: "Overall instruction",
-    });
-    send.mockRejectedValueOnce(new Error("offline"));
-    expect(await h.call("sendDraft", { threadId: "t" })).toMatchObject({
-      ok: false,
-    });
-    expect(result(await h.call("getDraft", { threadId: "t" })).items).toHaveLength(
-      1,
-    );
-    const responses = await Promise.all([
-      h.call("sendDraft", { threadId: "t" }),
-      h.call("sendDraft", { threadId: "t" }),
-    ]);
-    expect(responses.filter((response) => response.ok)).toHaveLength(1);
-    expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls[1]).toMatchObject([
-      {
-        threadId: "t",
-        mode: "auto",
-        input: [
-          {
-            type: "text",
-            mentions: [],
-            text: expect.stringContaining("Overall instruction"),
-          },
-        ],
-      },
-    ]);
-    expect(result(await h.call("getDraft", { threadId: "t" })).items).toEqual(
-      [],
-    );
   });
 
   it("public SDK scan", () => {
@@ -211,32 +161,4 @@ describe("draft RPC", () => {
     expect(scan.violations).toEqual([]);
     expect(scan.privateDependencies).toEqual([]);
   });
-});
-
-it("sends overall-only feedback and preserves a mutation queued during delivery", async () => {
-  let release!: () => void;
-  let entered!: () => void;
-  const started = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  const waiting = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const send = vi.fn(async () => {
-    entered();
-    await waiting;
-    return { ok: true as const, delivery: "steered" as const };
-  });
-  const h = await setup(send);
-  await h.call("setOverallFeedback", { threadId: "t", value: "Overall only" });
-  const sending = h.call("sendDraft", { threadId: "t" });
-  await started;
-  const adding = h.call("addItem", input());
-  release();
-  expect(result(await sending).draft.items).toEqual([]);
-  expect(result(await adding).items).toHaveLength(1);
-  expect(result(await h.call("getDraft", { threadId: "t" })).items).toHaveLength(
-    1,
-  );
-  expect(send).toHaveBeenCalledTimes(1);
 });

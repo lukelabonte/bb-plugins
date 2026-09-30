@@ -1,19 +1,23 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { draftSchema, rpcContract, type FeedbackDraft } from "./contract";
-import { formatRevisionRequest } from "./lib/format-revision-request";
 
 /**
- * Legacy drafts stored each item with a `kind` ("comment" | "remove"). Every
- * quote is a comment now: the field is dropped, a removal's reason text
- * (already stored in `body`) becomes the comment, and body-less removals —
- * which cannot satisfy the comment schema — are dropped.
+ * Legacy drafts stored each item with a `kind` ("comment" | "remove") and a
+ * top-level `overallFeedback`. Every quote is a comment now and typed
+ * composer text rides along at send time instead: the fields are dropped, a
+ * removal's reason text (already stored in `body`) becomes the comment, and
+ * body-less removals — which cannot satisfy the comment schema — are
+ * dropped.
  */
 function migrateLegacyDraft(stored: unknown): unknown {
   if (!stored || typeof stored !== "object") return stored;
   const items = (stored as { items?: unknown }).items;
   if (!Array.isArray(items)) return stored;
+  const { overallFeedback: _overallFeedback, ...rest } = stored as {
+    overallFeedback?: unknown;
+  } & Record<string, unknown>;
   return {
-    ...stored,
+    ...rest,
     items: items
       .filter(
         (item): item is Record<string, unknown> =>
@@ -22,7 +26,7 @@ function migrateLegacyDraft(stored: unknown): unknown {
           typeof (item as { body?: unknown }).body === "string" &&
           !!(item as { body: string }).body.trim(),
       )
-      .map(({ kind: _kind, ...rest }) => rest),
+      .map(({ kind: _kind, ...itemRest }) => itemRest),
   };
 }
 
@@ -32,7 +36,6 @@ export default function plugin(bb: BbPluginApi) {
   const empty = (threadId: string): FeedbackDraft => ({
     threadId,
     items: [],
-    overallFeedback: "",
     updatedAt: new Date().toISOString(),
   });
 
@@ -109,32 +112,7 @@ export default function plugin(bb: BbPluginApi) {
       mutate(threadId, (draft) => {
         draft.items.splice(indexOf(draft, itemId), 1);
       }),
-    setOverallFeedback: ({ threadId, value }) =>
-      mutate(threadId, (draft) => {
-        draft.overallFeedback = value;
-      }),
     clearDraft: ({ threadId }) => serial(threadId, () => write(empty(threadId))),
-    sendDraft: ({ threadId }) =>
-      serial(threadId, async () => {
-        const draft = await read(threadId);
-        if (!draft.items.length && !draft.overallFeedback.trim())
-          throw new Error("Add a quote before sending");
-        // The draft clears only after the delivery is accepted; a failed
-        // send leaves every staged item in place.
-        const result = await bb.sdk.threads.send({
-          threadId,
-          mode: "auto",
-          input: [
-            {
-              type: "text",
-              text: formatRevisionRequest(draft.items, draft.overallFeedback),
-              mentions: [],
-            },
-          ],
-        });
-        const cleared = await write(empty(threadId));
-        return { draft: cleared, delivery: result.delivery };
-      }),
   });
 
   bb.events.on("thread.deleted", ({ thread }) =>

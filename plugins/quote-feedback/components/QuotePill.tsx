@@ -8,7 +8,9 @@ import {
 import { toast } from "sonner";
 import type { FeedbackDraft, FeedbackItem, rpcContract } from "../contract";
 import { quoteEditorStore } from "../lib/editor-store";
+import { formatRevisionRequest } from "../lib/format-revision-request";
 import { quoteHighlights } from "../lib/highlights";
+import { shouldInterceptSubmit } from "../lib/submit-interception";
 import { Button } from "@/components/ui/button";
 
 export function QuotePill() {
@@ -23,7 +25,6 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
   const view = useComposerView();
-  const composerText = view.draft.text;
   const [draft, setDraft] = useState<FeedbackDraft>();
   // Open-state machine over hover: pointer entry opens, leaving closes,
   // click while open dismisses (and it stays dismissed while the pointer
@@ -40,6 +41,7 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   // The visual gap between pill and list is outside both boxes; closing is
   // delayed so the pointer can cross it without the list unmounting.
   const hoverTimer = useRef<number | undefined>(undefined);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const enterHover = () => {
     window.clearTimeout(hoverTimer.current);
@@ -98,20 +100,107 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
     }
   };
 
-  // The thread's message box is the overall-feedback field: whatever is
-  // typed there joins the batch when feedback is sent, then clears.
-  // Transitional home until the send-path slice lands.
-  const send = () =>
-    void run(async () => {
-      if (composerText.trim()) {
-        await rpc.call("setOverallFeedback", { threadId, value: composerText });
+  // Single send path (ADR-0002): while quotes are staged, capture-phase
+  // listeners intercept the composer's plain Enter or send-button click and
+  // submit `formatted quotes + typed text` through the composer's own
+  // pipeline, so the on-screen provider/model/permission/attachments travel.
+  // The draft clears only after the host accepts the submission; a refusal
+  // restores the user's typed text and keeps every staged quote. Nothing
+  // staged → the listeners pass every event through untouched.
+  const submitStaged = useRef<() => void>(() => {});
+  submitStaged.current = () => {
+    const items = draft?.items ?? [];
+    if (active.current || items.length === 0) return;
+    active.current = true;
+    setBusy(true);
+    const typedText = view.draft.text;
+    void (async () => {
+      try {
+        composer.setText(formatRevisionRequest(items, typedText));
+        await composer.experimental_submit({ experimental_data: null });
+        accept(await rpc.call("clearDraft", { threadId }));
+        setListState("closed");
+        toast.success("Quotes sent.");
+      } catch (cause) {
+        composer.setText(typedText);
+        const message = cause instanceof Error ? cause.message : String(cause);
+        toast.error("Could not send quotes", { description: message });
+      } finally {
+        active.current = false;
+        setBusy(false);
       }
-      const result = await rpc.call("sendDraft", { threadId });
-      accept(result.draft);
-      if (composerText.trim()) composer.clear();
-      setListState("closed");
-      toast.success(`Quotes submitted (${result.delivery}).`);
-    });
+    })();
+  };
+
+  useEffect(() => {
+    const pluginUi = (target: EventTarget | null) =>
+      target instanceof Element &&
+      target.closest("[data-quote-feedback-ui]") !== null;
+    // The pill banner renders inside the composer area; the region is the
+    // lowest ancestor that also contains the composer input. No region →
+    // fail open to stock behavior.
+    const composerRegion = () => {
+      let node = wrapperRef.current?.parentElement ?? null;
+      while (node) {
+        if (node.querySelector("textarea, [contenteditable='true']")) {
+          return node;
+        }
+        node = node.parentElement;
+      }
+      return null;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        !shouldInterceptSubmit(
+          {
+            kind: "keydown",
+            key: event.key,
+            shiftKey: event.shiftKey,
+            isComposing: event.isComposing,
+          },
+          draft?.items.length ?? 0,
+        )
+      ) {
+        return;
+      }
+      const target = event.target;
+      const isComposerInput =
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable);
+      if (!isComposerInput || pluginUi(target)) return;
+      const region = composerRegion();
+      if (!region?.contains(target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      submitStaged.current();
+    };
+    const onClick = (event: MouseEvent) => {
+      if (
+        !shouldInterceptSubmit(
+          { kind: "send-button-click" },
+          draft?.items.length ?? 0,
+        )
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element) || pluginUi(target)) return;
+      const button = target.closest(
+        "button[type='submit'], button[aria-label*='send' i]",
+      );
+      const region = composerRegion();
+      if (!button || !region?.contains(button)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      submitStaged.current();
+    };
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    document.addEventListener("click", onClick, { capture: true });
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+      document.removeEventListener("click", onClick, { capture: true });
+    };
+  }, [draft?.items.length]);
 
   const remove = (item: FeedbackItem) =>
     void run(async () => {
@@ -146,13 +235,11 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
   if (draft.items.length === 0) return null;
 
   const open = listState === "open";
-  const hasFeedback =
-    draft.items.length > 0 ||
-    !!draft.overallFeedback.trim() ||
-    !!composerText.trim();
 
   return (
     <div
+      ref={wrapperRef}
+      data-quote-feedback-ui
       className="relative inline-block"
       onMouseEnter={enterHover}
       onMouseLeave={leaveHover}
@@ -228,14 +315,6 @@ function ThreadQuotePill({ threadId }: { threadId: string }) {
               {error}
             </p>
           ) : null}
-
-          <div className="mt-2 flex justify-end border-t border-border pt-2">
-            {hasFeedback ? (
-              <Button size="sm" disabled={busy} onClick={send}>
-                {busy ? "Working…" : "Send quotes"}
-              </Button>
-            ) : null}
-          </div>
         </div>
       ) : null}
     </div>

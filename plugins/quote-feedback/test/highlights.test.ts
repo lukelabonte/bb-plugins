@@ -197,7 +197,6 @@ it("restores the active draft when BB remounts the content script", () => {
 
     const draft: FeedbackDraft = {
       threadId: "thread-1",
-      overallFeedback: "",
       updatedAt: new Date(0).toISOString(),
       items: [
         {

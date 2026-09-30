@@ -48,7 +48,6 @@ export type FeedbackItem = z.infer<typeof feedbackItemSchema>;
 export const draftSchema = z
   .strictObject({
     threadId: id,
-    overallFeedback: z.string().max(20000),
     items: z.array(feedbackItemSchema).max(100),
     updatedAt: z.string(),
   })
@@ -84,13 +83,5 @@ export const rpcContract = defineRpcContract({
     output: draftSchema,
   },
   removeItem: { input: item, output: draftSchema },
-  setOverallFeedback: {
-    input: thread.extend({ value: z.string().max(20000) }),
-    output: draftSchema,
-  },
   clearDraft: { input: thread, output: draftSchema },
-  sendDraft: {
-    input: thread,
-    output: z.strictObject({ draft: draftSchema, delivery: z.string() }),
-  },
 });

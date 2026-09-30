@@ -73,7 +73,6 @@ it("rejects blank comments and more than 100 items", () => {
     draftSchema.safeParse({
       threadId: "t",
       updatedAt: "",
-      overallFeedback: "",
       items: Array(101).fill(item({})),
     }).success,
   ).toBe(false);
